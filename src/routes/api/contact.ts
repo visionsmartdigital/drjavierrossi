@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
+import nodemailer from "nodemailer";
+import dotenv from "dotenv";
+import fs from "node:fs/promises";
+import path from "node:path";
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/resend";
-
-const RECIPIENTS = [
-  "dr_rossijavier@yahoo.com",
-  "macarena.delgado.crear@gmail.com",
-];
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 const contactSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -25,26 +25,63 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-async function handleRequest(request: Request) {
-  if (request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
-  }
+const LOG_FILE = path.join(process.cwd(), "el negro vigila.txt");
 
-  const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
-  const RESEND_API_KEY = process.env.RESEND_API_KEY;
-  if (!LOVABLE_API_KEY) {
-    return Response.json(
-      { error: "LOVABLE_API_KEY is not configured" },
-      { status: 500 },
+async function appendContactLog(entry: {
+  name: string;
+  email: string;
+  phone: string;
+  service: string;
+  messageId: string | undefined;
+}) {
+  const timestamp = new Date().toISOString();
+  const line =
+    `[${timestamp}] name="${entry.name}" email="${entry.email}" ` +
+    `phone="${entry.phone || "-"}" service="${entry.service || "-"}" ` +
+    `messageId=${entry.messageId ?? "-"}\n`;
+
+  // Vercel logs (always available, even when FS is read-only).
+  console.log(`[contact-log] ${line.trim()}`);
+
+  // Filesystem log (works in dev; silently no-op in read-only environments).
+  try {
+    await fs.appendFile(LOG_FILE, line, "utf8");
+  } catch (err) {
+    console.warn(
+      `[contact-log] no se pudo escribir "${LOG_FILE}":`,
+      err instanceof Error ? err.message : err,
     );
   }
-  if (!RESEND_API_KEY) {
-    return Response.json(
-      { error: "RESEND_API_KEY is not configured" },
-      { status: 500 },
+}
+
+let cachedTransporter: nodemailer.Transporter | null = null;
+
+function getTransporter() {
+  if (cachedTransporter) return cachedTransporter;
+
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT ?? 465);
+  const secure = (process.env.SMTP_SECURE ?? "true").toLowerCase() === "true";
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (!host || !user || !pass) {
+    throw new Error(
+      "SMTP no configurado: faltan SMTP_HOST, SMTP_USER o SMTP_PASS",
     );
   }
 
+  cachedTransporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
+  });
+
+  return cachedTransporter;
+}
+
+async function handlePost({ request }: { request: Request }) {
   let body: unknown;
   try {
     body = await request.json();
@@ -62,6 +99,19 @@ async function handleRequest(request: Request) {
 
   const { name, email, phone, service, message } = parsed.data;
 
+  const recipients = (process.env.MAIL_TO ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (recipients.length === 0) {
+    return Response.json(
+      { error: "MAIL_TO no configurado" },
+      { status: 500 },
+    );
+  }
+
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER!;
   const subject = `Nueva consulta web — ${name}`;
   const html = `
     <h2>Nueva consulta desde el sitio web</h2>
@@ -82,37 +132,42 @@ async function handleRequest(request: Request) {
     message || "—",
   ].join("\n");
 
-  const response = await fetch(`${GATEWAY_URL}/emails`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      "X-Connection-Api-Key": RESEND_API_KEY,
-    },
-    body: JSON.stringify({
-      from: "Dr. Javier Rossi <noreply@drjavierrossi.com>",
-      to: RECIPIENTS,
-      reply_to: email,
+  try {
+    const transporter = getTransporter();
+    const info = await transporter.sendMail({
+      from,
+      to: recipients,
+      replyTo: email,
       subject,
       html,
       text,
-    }),
-  });
+    });
 
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
+    await appendContactLog({
+      name,
+      email,
+      phone,
+      service,
+      messageId: info.messageId,
+    });
+
+    return Response.json({ ok: true, messageId: info.messageId });
+  } catch (err) {
+    console.error("[/api/contact] SMTP error:", err);
     return Response.json(
-      { error: "Email send failed", status: response.status, data },
+      {
+        error: "Email send failed",
+        detail: err instanceof Error ? err.message : String(err),
+      },
       { status: 502 },
     );
   }
-
-  return Response.json({ ok: true });
 }
 
 export const Route = createFileRoute("/api/contact")({
-  component: () => null,
+  server: {
+    handlers: {
+      POST: handlePost,
+    },
+  },
 });
-
-// Keep handler exported for future wiring
-export { handleRequest };
