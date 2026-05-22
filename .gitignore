@@ -19,7 +19,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
-el negro vigila.txt
 
 # Editor directories and files
 .vscode/*

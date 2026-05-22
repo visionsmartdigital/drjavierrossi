@@ -1,0 +1,3 @@
+# el negro vigila — log de envíos del formulario de contacto
+# Una línea por cada POST exitoso a /api/contact.
+# Solo persiste en entorno local (en Vercel el filesystem es efímero).
