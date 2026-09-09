@@ -67,7 +67,7 @@ export function ContactSection() {
               )}
             </p>
             <div className="mt-8 space-y-4 text-sm opacity-90">
-              <p>📍 Av. Acoyte 76 piso 5D, Caballito, CABA, Argentina</p>
+              <p>📍 Blanco Encalada 2387, Piso 17B, Belgrano, CABA, Argentina</p>
               <p>📱 +54 9 11 5592-1388</p>
               <p>✉️ consultas@drjavierrossi.com</p>
               <p>
