@@ -16,9 +16,9 @@ declare global {
 // TODO: Replace with the 3 most recent reel URLs from
 // https://www.instagram.com/drjavierrossi/reels/
 const reelUrls: string[] = [
-  "https://www.instagram.com/reel/REEL_ID_1/",
-  "https://www.instagram.com/reel/REEL_ID_2/",
-  "https://www.instagram.com/reel/REEL_ID_3/",
+"https://www.instagram.com/crearestetica/reel/DdWdEsVR7jW/",
+"https://www.instagram.com/crearestetica/reel/DdMD5gAJEt7/",
+"https://www.instagram.com/tchangeargentina/reel/DdKQbUWPUJb/",
 ];
 
 function ReelEmbed({ url }: { url: string }) {
